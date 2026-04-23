@@ -234,7 +234,7 @@ class MainWindow(QMainWindow):
         self.lbl_feedback.setText("")
 
     def generate_new_guess(self):
-        self.guess_question_type = random.randint(1, 4)
+        self.guess_question_type = random.randint(1, 6)
         self.lbl_grade.setText("Calificación: --")
         self.lbl_grade.setStyleSheet("color: black;")
         self.lbl_feedback.setText("")
@@ -252,6 +252,16 @@ class MainWindow(QMainWindow):
             
         w0 = round(w0, 2)
         alpha = round(alpha, 2)
+        wd = round(float(np.sqrt(abs(w0**2 - alpha**2))), 2)
+        
+        # Guardamos en self para usarlos en el feedback
+        self.current_R = R
+        self.current_L = L
+        self.current_C = C
+        self.current_tipo_c = tipo_c
+        self.current_w0 = w0
+        self.current_alpha = alpha
+        self.current_wd = wd
 
         if self.guess_question_type == 1:
             # Adivinar tipo dados w0 y alpha
@@ -286,12 +296,32 @@ class MainWindow(QMainWindow):
             )
             
         elif self.guess_question_type == 4:
-            # Encontrar componente faltante (ej. R dado w0, L, C... para variar usamos alpha y R,L,C)
+            # Calcular wd dados R, L, C
             self.combo_guess.hide()
             self.input_guess.show()
             self.input_guess.clear()
-            
-            # Decidimos ocultar C y dar w0 y L. w0 = 1/sqrt(LC) => C = 1/(L * w0^2)
+            self.guess_correct_answer_num = wd
+            self.lbl_guess_question.setText(
+                f"Circuito {tipo_c} con R = {R} Ω, L = {L} H, C = {C} F.\n"
+                "Calcula la Frecuencia Natural Amortiguada (ωd) en rad/s:"
+            )
+
+        elif self.guess_question_type == 5:
+            # Encontrar L dados w0 y C
+            self.combo_guess.hide()
+            self.input_guess.show()
+            self.input_guess.clear()
+            self.guess_correct_answer_num = L
+            self.lbl_guess_question.setText(
+                f"Para lograr un ω0 = {w0} rad/s en un circuito con C = {C} F.\n"
+                "¿Cuál debe ser el valor del Inductor (L) en Henrios?"
+            )
+
+        elif self.guess_question_type == 6:
+            # Encontrar C dados w0 y L
+            self.combo_guess.hide()
+            self.input_guess.show()
+            self.input_guess.clear()
             self.guess_correct_answer_num = C
             self.lbl_guess_question.setText(
                 f"Para lograr un ω0 = {w0} rad/s en un circuito con L = {L} H.\n"
@@ -360,7 +390,7 @@ class MainWindow(QMainWindow):
             if self.circuit_type.currentText() != self.target_circuit_type:
                 self.lbl_grade.setText("Calificación: 0/100")
                 self.lbl_grade.setStyleSheet("color: red;")
-                self.lbl_feedback.setText("¡Construiste la topología equivocada! Revisa si pedía Serie o Paralelo.")
+                self.lbl_feedback.setText(f"¡Construiste la topología equivocada! Pedía {self.target_circuit_type}.\nLas fórmulas cambian según la topología.")
                 self.show_explosion()
                 return
 
@@ -369,11 +399,11 @@ class MainWindow(QMainWindow):
             
             max_error = max(error_w0, error_alpha)
             
-            if max_error <= 0.05: # 5% de error permitido para 100
+            if max_error <= 0.15: # 15% de error permitido para 100
                 self.lbl_grade.setText("Calificación: 100/100 - ¡Excelente!")
                 self.lbl_grade.setStyleSheet("color: green;")
                 self.show_success_animation()
-            elif max_error <= 0.20: # 20% de error permitido para 50
+            elif max_error <= 0.35: # 35% de error permitido para 50
                 self.lbl_grade.setText("Calificación: 50/100 - Regular")
                 self.lbl_grade.setStyleSheet("color: orange;")
                 
@@ -386,7 +416,15 @@ class MainWindow(QMainWindow):
             else:
                 self.lbl_grade.setText("Calificación: 0/100 - ¡Error!")
                 self.lbl_grade.setStyleSheet("color: red;")
-                self.lbl_feedback.setText("Los valores están muy lejos del objetivo (>20% error).")
+                
+                feedback_build = "Los valores están muy lejos del objetivo (>35% error).\n"
+                feedback_build += f"Fórmulas {self.target_circuit_type}:\nω0 = 1/√(L*C)\n"
+                if self.target_circuit_type == "Serie":
+                    feedback_build += "α = R / (2*L)"
+                else:
+                    feedback_build += "α = 1 / (2*R*C)"
+                    
+                self.lbl_feedback.setText(feedback_build)
                 self.show_explosion()
                 
         elif self.current_mode == "Modo Análisis":
@@ -396,9 +434,9 @@ class MainWindow(QMainWindow):
             else:
                 try:
                     user_val = float(self.input_guess.text())
-                    # Permitir 2% de error debido al redondeo que pedimos
+                    # Permitir 5% de error debido al redondeo que pedimos
                     error = abs(user_val - self.guess_correct_answer_num) / (self.guess_correct_answer_num if self.guess_correct_answer_num != 0 else 1)
-                    is_correct = (error <= 0.02)
+                    is_correct = (error <= 0.05)
                 except ValueError:
                     is_correct = False
             
@@ -409,7 +447,26 @@ class MainWindow(QMainWindow):
             else:
                 self.lbl_grade.setText("Calificación: 0/100 - ¡Incorrecto!")
                 self.lbl_grade.setStyleSheet("color: red;")
-                self.lbl_feedback.setText(f"La respuesta correcta era cercana a: {self.guess_correct_answer_num if self.guess_question_type != 1 else self.guess_correct_answer_str}")
+                
+                feedback_msg = ""
+                if self.guess_question_type == 1:
+                    cond = "α = ω0" if np.isclose(self.current_alpha, self.current_w0, rtol=1e-5) else ("α > ω0" if self.current_alpha > self.current_w0 else "α < ω0")
+                    feedback_msg = f"La respuesta era {self.guess_correct_answer_str}.\nPorque {cond}."
+                elif self.guess_question_type == 2:
+                    feedback_msg = f"Fórmula: ω0 = 1 / √(L * C)\nValores: L = {self.current_L} H, C = {self.current_C} F\nResultado correcto: {self.guess_correct_answer_num}"
+                elif self.guess_question_type == 3:
+                    if self.current_tipo_c == "Serie":
+                        feedback_msg = f"Fórmula (Serie): α = R / (2 * L)\nValores: R = {self.current_R} Ω, L = {self.current_L} H\nResultado correcto: {self.guess_correct_answer_num}"
+                    else:
+                        feedback_msg = f"Fórmula (Paralelo): α = 1 / (2 * R * C)\nValores: R = {self.current_R} Ω, C = {self.current_C} F\nResultado correcto: {self.guess_correct_answer_num}"
+                elif self.guess_question_type == 4:
+                    feedback_msg = f"Fórmula: ωd = √|ω0² - α²|\nValores: ω0 = {self.current_w0}, α = {self.current_alpha}\nResultado correcto: {self.guess_correct_answer_num}"
+                elif self.guess_question_type == 5:
+                    feedback_msg = f"Fórmula despejando L: L = 1 / (C * ω0²)\nValores: ω0 = {self.current_w0}, C = {self.current_C} F\nResultado correcto: {self.guess_correct_answer_num}"
+                elif self.guess_question_type == 6:
+                    feedback_msg = f"Fórmula despejando C: C = 1 / (L * ω0²)\nValores: ω0 = {self.current_w0}, L = {self.current_L} H\nResultado correcto: {self.guess_correct_answer_num}"
+                
+                self.lbl_feedback.setText(feedback_msg)
                 self.show_explosion()
 
     def show_explosion(self):

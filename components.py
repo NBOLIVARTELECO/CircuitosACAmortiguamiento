@@ -18,6 +18,7 @@ class ComponentBase(QGraphicsItem):
         
         # Etiqueta de texto para mostrar nombre y valor
         self.text_item = QGraphicsTextItem(self)
+        self.text_item.setDefaultTextColor(Qt.GlobalColor.black)
         self.text_item.setPos(-20, 25)
         self.update_text()
 
@@ -43,18 +44,26 @@ class ComponentBase(QGraphicsItem):
         painter.drawText(self.boundingRect(), Qt.AlignmentFlag.AlignCenter, self.name)
 
     def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent):
+        from PyQt6.QtWidgets import QLineEdit, QMessageBox
+        
         # Al hacer doble clic, pedir el valor al usuario
-        value, ok = QInputDialog.getDouble(
+        text, ok = QInputDialog.getText(
             None, f"Valor de {self.name}", 
-            f"Ingrese el valor en {self.unit}:", 
-            self.value, 0, 1000000, 4
+            f"Ingrese el valor en {self.unit} (ej. 1e-3, 0.01):", 
+            QLineEdit.EchoMode.Normal,
+            str(self.value)
         )
         if ok:
-            self.value = value
-            self.update_text()
-            # Emitir señal de actualización a la escena principal (lo manejaremos después)
-            if self.scene():
-                self.scene().update()
+            try:
+                new_value = float(text)
+                self.value = new_value
+                self.update_text()
+                # Emitir señal de actualización a la escena principal (lo manejaremos después)
+                if self.scene():
+                    self.scene().update()
+            except ValueError:
+                QMessageBox.warning(None, "Error", f"Valor inválido: '{text}'. Use un formato numérico válido.")
+                
         super().mouseDoubleClickEvent(event)
 
 
